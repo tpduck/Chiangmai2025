@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清邁放空團 - 記帳管理系統</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { Plus, Trash2, Calculator, Users, Wallet, DollarSign, Edit } = lucideReact;
+
+        const GroupExpenseTracker = () => {
+          const [friends, setFriends] = useState(['', '', '', '', '', '']);
+          const [publicFunds, setPublicFunds] = useState({ TWD: 0, THB: 0 });
+          const [publicContributions, setPublicContributions] = useState({ TWD: 0, THB: 0 });
+          const [expenses, setExpenses] = useState([]);
+          const [showAddExpense, setShowAddExpense] = useState(false);
+          const [showAddFunds, setShowAddFunds] = useState(false);
+          const [showSettlement, setShowSettlement] = useState(false);
+          const [editingExpense, setEditingExpense] = useState(null);
+
+          const [newExpense, setNewExpense] = useState({
+            description: '',
+            amount: '',
+            currency: 'THB',
+            paidBy: 'public',
+            usedBy: [],
+            date: new Date().toISOString().split('T')[0],
+            calculatorInput: ''
+          });
+
+          const [newFund, setNewFund] = useState({
+            perPersonAmount: '',
+            currency: 'THB',
+            calculatorInput: ''
+          });
+
+          const exchangeRate = 1.1;
+
+          const getValidFriends = () => friends.filter(friend => friend.trim() !== '');
+
+          const updateFriend = (index, name) => {
+            const newFriends = [...friends];
+            newFriends[index] = name;
+            setFriends(newFriends);
+          };
+
+          const calculateAmount = (input) => {
+            try {
+              const result = Function('"use strict"; return (' + input + ')')();
+              return result;
+            } catch (e) {
+              return 0;
+            }
+          };
+
+          const addPublicFund = () => {
+            const perPersonAmount = newFund.calculatorInput ? 
+              calculateAmount(newFund.calculatorInput) : 
+              parseFloat(newFund.perPersonAmount) || 0;
+            
+            const validFriends = getValidFriends();
+            const totalAmount = perPersonAmount * validFriends.length;
+            
+            if (perPersonAmount > 0 && validFriends.length > 0) {
+              setPublicFunds(prev => ({
+                ...prev,
+                [newFund.currency]: prev[newFund.currency] + totalAmount
+              }));
+              
+              setPublicContributions(prev => ({
+                ...prev,
+                [newFund.currency]: prev[newFund.currency] + perPersonAmount
+              }));
+              
+              setNewFund({ perPersonAmount: '', currency: 'THB', calculatorInput: '' });
+              setShowAddFunds(false);
+            }
+          };
+
+          const handleShowAddExpense = () => {
+            if (!showAddExpense) {
+              setNewExpense(prev => ({
+                ...prev,
+                usedBy: [...getValidFriends()]
+              }));
+            }
+            setShowAddExpense(!showAddExpense);
+          };
+
+          const startEditExpense = (expense) => {
+            if (expense.paidBy === 'public') {
+              setPublicFunds(prev => ({
+                ...prev,
+                [expense.currency]: prev[expense.currency] + expense.amount
+              }));
+            }
+            
+            setEditingExpense(expense.id);
+            setNewExpense({
+              description: expense.description,
+              amount: expense.amount.toString(),
+              currency: expense.currency,
+              paidBy: expense.paidBy,
+              usedBy: [...expense.usedBy],
+              date: expense.date,
+              calculatorInput: ''
+            });
+            setShowAddExpense(true);
+          };
+
+          const cancelEdit = () => {
+            if (editingExpense) {
+              const originalExpense = expenses.find(e => e.id === editingExpense);
+              if (originalExpense && originalExpense.paidBy === 'public') {
+                setPublicFunds(prev => ({
+                  ...prev,
+                  [originalExpense.currency]: prev[originalExpense.currency] - originalExpense.amount
+                }));
+              }
+            }
+            
+            setEditingExpense(null);
+            setNewExpense({
+              description: '',
+              amount: '',
+              currency: 'THB',
+              paidBy: 'public',
+              usedBy: [],
+              date: new Date().toISOString().split('T')[0],
+              calculatorInput: ''
+            });
+            setShowAddExpense(false);
+          };
+
+          const updateExpense = () => {
+            const amount = newExpense.calculatorInput ? 
+              calculateAmount(newExpense.calculatorInput) : 
+              parseFloat(newExpense.amount) || 0;
+
+            const validFriends = getValidFriends();
+            const validUsedBy = newExpense.usedBy.filter(friend => validFriends.includes(friend));
+
+            if (newExpense.description && amount > 0 && validUsedBy.length > 0) {
+              const updatedExpense = {
+                id: editingExpense,
+                description: newExpense.description,
+                amount: amount,
+                currency: newExpense.currency,
+                paidBy: newExpense.paidBy,
+                usedBy: validUsedBy,
+                date: newExpense.date
+              };
+
+              setExpenses(expenses.map(expense => 
+                expense.id === editingExpense ? updatedExpense : expense
+              ));
+              
+              if (newExpense.paidBy === 'public') {
+                setPublicFunds(prev => ({
+                  ...prev,
+                  [newExpense.currency]: prev[newExpense.currency] - amount
+                }));
+              }
+
+              setEditingExpense(null);
+              setNewExpense({
+                description: '',
+                amount: '',
+                currency: 'THB',
+                paidBy: 'public',
+                usedBy: [],
+                date: new Date().toISOString().split('T')[0],
+                calculatorInput: ''
+              });
+              setShowAddExpense(false);
+            }
+          };
+
+          const addExpense = () => {
+            const amount = newExpense.calculatorInput ? 
+              calculateAmount(newExpense.calculatorInput) : 
+              parseFloat(newExpense.amount) || 0;
+
+            const validFriends = getValidFriends();
+            const validUsedBy = newExpense.usedBy.filter(friend => validFriends.includes(friend));
+
+            if (newExpense.description && amount > 0 && validUsedBy.length > 0) {
+              if (editingExpense) {
+                updateExpense();
+              } else {
+                const expense = {
+                  id: Date.now(),
+                  description: newExpense.description,
+                  amount: amount,
+                  currency: newExpense.currency,
+                  paidBy: newExpense.paidBy,
+                  usedBy: validUsedBy,
+                  date: newExpense.date
+                };
+
+                setExpenses([...expenses, expense]);
+                
+                if (newExpense.paidBy === 'public') {
+                  setPublicFunds(prev => ({
+                    ...prev,
+                    [newExpense.currency]: prev[newExpense.currency] - amount
+                  }));
+                }
+
+                setNewExpense({
+                  description: '',
+                  amount: '',
+                  currency: 'THB',
+                  paidBy: 'public',
+                  usedBy: [],
+                  date: new Date().toISOString().split('T')[0],
+                  calculatorInput: ''
+                });
+                setShowAddExpense(false);
+              }
+            }
+          };
+
+          const toggleUsedBy = (friend) => {
+            setNewExpense(prev => ({
+              ...prev,
+              usedBy: prev.usedBy.includes(friend) 
+                ? prev.usedBy.filter(f => f !== friend)
+                : [...prev.usedBy, friend]
+            }));
+          };
+
+          const removeExpense = (expenseId) => {
+            const expense = expenses.find(e => e.id === expenseId);
+            if (expense && expense.paidBy === 'public') {
+              setPublicFunds(prev => ({
+                ...prev,
+                [expense.currency]: prev[expense.currency] + expense.amount
+              }));
+            }
+            setExpenses(expenses.filter(e => e.id !== expenseId));
+          };
+
+          const calculateFinalSettlement = () => {
+            const validFriends = getValidFriends();
+            const balances = {};
+            
+            validFriends.forEach(friend => {
+              balances[friend] = { TWD: 0, THB: 0 };
+            });
+
+            expenses.forEach(expense => {
+              const perPersonCost = expense.amount / expense.usedBy.length;
+              
+              expense.usedBy.forEach(user => {
+                if (validFriends.includes(user)) {
+                  balances[user][expense.currency] -= perPersonCost;
+                }
+              });
+
+              if (expense.paidBy !== 'public' && validFriends.includes(expense.paidBy)) {
+                balances[expense.paidBy][expense.currency] += expense.amount;
+              }
+            });
+
+            validFriends.forEach(friend => {
+              balances[friend].TWD += publicContributions.TWD;
+              balances[friend].THB += publicContributions.THB;
+            });
+
+            return balances;
+          };
+
+          const convertToTWD = (amount, currency) => {
+            return currency === 'THB' ? amount / exchangeRate : amount;
+          };
+
+          const formatCurrency = (amount, currency) => {
+            return `${currency} ${amount.toFixed(2)}`;
+          };
+
+          const validFriends = getValidFriends();
+          const balances = calculateFinalSettlement();
+
+          return (
+            <div className="max-w-4xl mx-auto p-6 bg-gradient-to-br from-orange-50 to-yellow-50 min-h-screen">
+              <div className="bg-white rounded-2xl shadow-xl p-8">
+                <div className="text-center mb-8">
+                  <h1 className="text-4xl font-bold text-orange-600 mb-2">🏛️ 清邁放空團 🛺</h1>
+                  <p className="text-gray-600">記帳管理系統</p>
+                </div>
+
+                {/* 團員管理 */}
+                <div className="mb-8 bg-orange-50 rounded-lg p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="text-orange-600" />
+                    <h2 className="text-2xl font-bold text-orange-800">團員管理 (6人)</h2>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {friends.map((friend, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 w-8">#{index + 1}</span>
+                        <input
+                          type="text"
+                          value={friend}
+                          onChange={(e) => updateFriend(index, e.target.value)}
+                          placeholder={`團員 ${index + 1} 姓名`}
+                          className="flex-1 p-3 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="mt-4 text-sm text-gray-600">
+                    已填寫團員: {validFriends.length}/6 人
+                    {validFriends.length > 0 && (
+                      <span className="ml-2">({validFriends.join(', ')})</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 公費管理 */}
+                <div className="mb-8 bg-green-50 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Wallet className="text-green-600" />
+                      <h2 className="text-2xl font-bold text-green-800">公費管理</h2>
+                    </div>
+                    <button
+                      onClick={() => setShowAddFunds(!showAddFunds)}
+                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                      disabled={validFriends.length === 0}
+                    >
+                      <Plus size={20} />
+                      收取公費
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                    <div className="space-y-3">
+                      <h3 className="font-semibold text-green-800">公費餘額</h3>
+                      <div className="bg-white p-4 rounded-lg border border-green-200">
+                        <div className="text-sm text-gray-600">台幣餘額</div>
+                        <div className="text-2xl font-bold text-green-600">TWD {publicFunds.TWD.toFixed(2)}</div>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border border-green-200">
+                        <div className="text-sm text-gray-600">泰銖餘額</div>
+                        <div className="text-2xl font-bold text-green-600">THB {publicFunds.THB.toFixed(2)}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <h3 className="font-semibold text-green-800">每人已繳公費</h3>
+                      <div className="bg-white p-4 rounded-lg border border-green-200">
+                        <div className="text-sm text-gray-600">台幣 (每人)</div>
+                        <div className="text-xl font-bold text-blue-600">TWD {publicContributions.TWD.toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">總計: TWD {(publicContributions.TWD * validFriends.length).toFixed(2)}</div>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border border-green-200">
+                        <div className="text-sm text-gray-600">泰銖 (每人)</div>
+                        <div className="text-xl font-bold text-blue-600">THB {publicContributions.THB.toFixed(2)}</div>
+                        <div className="text-xs text-gray-500">總計: THB {(publicContributions.THB * validFriends.length).toFixed(2)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {showAddFunds && (
+                    <div className="bg-white p-4 rounded-lg border border-green-200">
+                      <h3 className="font-semibold text-green-800 mb-3">收取公費 ({validFriends.length} 人)</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">每人金額計算</label>
+                          <input
+                            type="text"
+                            value={newFund.calculatorInput}
+                            onChange={(e) => setNewFund(prev => ({ ...prev, calculatorInput: e.target.value }))}
+                            placeholder="例: 100*5+50"
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            每人: {newFund.calculatorInput ? calculateAmount(newFund.calculatorInput) : 0}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">或直接輸入每人金額</label>
+                          <input
+                            type="number"
+                            value={newFund.perPersonAmount}
+                            onChange={(e) => setNewFund(prev => ({ ...prev, perPersonAmount: e.target.value }))}
+                            placeholder="每人金額"
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">幣別</label>
+                          <select
+                            value={newFund.currency}
+                            onChange={(e) => setNewFund(prev => ({ ...prev, currency: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500"
+                          >
+                            <option value="THB">泰銖 (THB)</option>
+                            <option value="TWD">台幣 (TWD)</option>
+                          </select>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 p-3 bg-gray-50 rounded text-sm">
+                        <strong>預覽:</strong> 每人繳交 {newFund.calculatorInput ? calculateAmount(newFund.calculatorInput) : (parseFloat(newFund.perPersonAmount) || 0)} {newFund.currency}，
+                        總計收入 {(newFund.calculatorInput ? calculateAmount(newFund.calculatorInput) : (parseFloat(newFund.perPersonAmount) || 0)) * validFriends.length} {newFund.currency}
+                      </div>
+                      
+                      <div className="flex gap-2 mt-4">
+                        <button
+                          onClick={addPublicFund}
+                          className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+                        >
+                          收取公費
+                        </button>
+                        <button
+                          onClick={() => setShowAddFunds(false)}
+                          className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 支出管理 */}
+                <div className="mb-8 bg-blue-50 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <DollarSign className="text-blue-600" />
+                      <h2 className="text-2xl font-bold text-blue-800">支出記錄</h2>
+                    </div>
+                    <button
+                      onClick={handleShowAddExpense}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2"
+                      disabled={validFriends.length === 0}
+                    >
+                      <Plus size={20} />
+                      新增支出
+                    </button>
+                  </div>
+
+                  {showAddExpense && (
+                    <div className="bg-white p-4 rounded-lg border border-blue-200 mb-4">
+                      <h3 className="font-semibold text-blue-800 mb-3">
+                        {editingExpense ? '編輯支出' : '新增支出'}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">支出描述</label>
+                          <input
+                            type="text"
+                            value={newExpense.description}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, description: e.target.value }))}
+                            placeholder="例: 晚餐費用"
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">日期</label>
+                          <input
+                            type="date"
+                            value={newExpense.date}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, date: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">金額計算</label>
+                          <input
+                            type="text"
+                            value={newExpense.calculatorInput}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, calculatorInput: e.target.value }))}
+                            placeholder="例: 200*3+150"
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <div className="text-xs text-gray-500 mt-1">
+                            計算結果: {newExpense.calculatorInput ? calculateAmount(newExpense.calculatorInput) : 0}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">或直接輸入金額</label>
+                          <input
+                            type="number"
+                            value={newExpense.amount}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, amount: e.target.value }))}
+                            placeholder="金額"
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">幣別</label>
+                          <select
+                            value={newExpense.currency}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, currency: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="THB">泰銖 (THB)</option>
+                            <option value="TWD">台幣 (TWD)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">付款方式</label>
+                          <select
+                            value={newExpense.paidBy}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, paidBy: e.target.value }))}
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="public">公費支付</option>
+                            {validFriends.map(friend => (
+                              <option key={friend} value={friend}>{friend} 個人支付</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">使用人員</label>
+                          <div className="flex flex-wrap gap-2">
+                            {validFriends.map(friend => (
+                              <button
+                                key={friend}
+                                onClick={() => toggleUsedBy(friend)}
+                                className={`px-3 py-1 rounded-full text-sm ${
+                                  newExpense.usedBy.includes(friend)
+                                    ? 'bg-blue-500 text-white'
+                                    : 'bg-gray-200 text-gray-700'
+                                }`}
+                              >
+                                {friend}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={addExpense}
+                          className={`px-4 py-2 ${editingExpense ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'} text-white rounded`}
+                        >
+                          {editingExpense ? '更新支出' : '新增支出'}
+                        </button>
+                        <button
+                          onClick={editingExpense ? cancelEdit : () => setShowAddExpense(false)}
+                          className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 支出列表 */}
+                  <div className="space-y-3">
+                    {expenses.map(expense => (
+                      <div key={expense.id} className="bg-white p-4 rounded-lg border border-blue-200">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-4 mb-2">
+                              <span className="font-semibold text-lg">{expense.description}</span>
+                              <span className="text-blue-600 font-bold">
+                                {formatCurrency(expense.amount, expense.currency)}
+                              </span>
+                              <span className="text-sm text-gray-500">{expense.date}</span>
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              付款: {expense.paidBy === 'public' ? '公費' : expense.paidBy} | 
+                              使用人: {expense.usedBy.join(', ')} | 
+                              人均: {formatCurrency(expense.amount / expense.usedBy.length, expense.currency)}
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => startEditExpense(expense)}
+                              className="text-orange-500 hover:text-orange-700 p-2"
+                              title="編輯支出"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => removeExpense(expense.id)}
+                              className="text-red-500 hover:text-red-700 p-2"
+                              title="刪除支出"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 最終結算 */}
+                <div className="bg-purple-50 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="text-purple-600" />
+                      <h2 className="text-2xl font-bold text-purple-800">最終結算</h2>
+                    </div>
+                    <button
+                      onClick={() => setShowSettlement(!showSettlement)}
+                      className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+                    >
+                      {showSettlement ? '隱藏' : '顯示'} 結算
+                    </button>
+                  </div>
+
+                  {showSettlement && validFriends.length > 0 && (
+                    <div className="space-y-4">
+                      <div className="bg-white p-4 rounded-lg border border-purple-200">
+                        <h3 className="font-bold text-lg mb-3 text-purple-800">最終結算明細 (已含已繳公費)</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {validFriends.map(friend => {
+                            const balance = balances[friend];
+                            const totalTWD = balance.TWD + convertToTWD(balance.THB, 'THB');
+                            return (
+                              <div key={friend} className="bg-gray-50 p-4 rounded-lg">
+                                <div className="font-semibold text-lg mb-2">{friend}</div>
+                                <div className="space-y-1 text-sm">
+                                  <div>台幣: <span className={`font-medium ${balance.TWD >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    TWD {balance.TWD.toFixed(2)}
+                                  </span></div>
+                                  <div>泰銖: <span className={`font-medium ${balance.THB >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    THB {balance.THB.toFixed(2)}
+                                  </span></div>
+                                  <div className="border-t pt-1">
+                                    總計(台幣): <span className={`font-bold ${totalTWD >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      TWD {totalTWD.toFixed(2)}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs font-medium">
+                                    {totalTWD >= 0 ? 
+                                      <span className="text-green-600">💰 應收回 TWD {Math.abs(totalTWD).toFixed(2)}</span> : 
+                                      <span className="text-red-600">💸 需補繳 TWD {Math.abs(totalTWD).toFixed(2)}</span>
+                                    }
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-lg border border-purple-200">
+                        <h3 className="font-bold text-lg mb-3 text-purple-800">說明</h3>
+                        <div className="text-sm text-gray-600 space-y-2">
+                          <p>• <strong>💰 綠色數字</strong>：表示此人應收回的金額（已付超過應付）</p>
+                          <p>• <strong>💸 紅色數字</strong>：表示此人需補繳的金額（應付超過已付）</p>
+                          <p>• 計算已包含每人已繳交的公費金額</p>
+                          <p>• 匯率: 1 TWD = {exchangeRate} THB</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        ReactDOM.render(<GroupExpenseTracker />, document.getElementById('root'));
+    </script>
+</body>
+</html>
