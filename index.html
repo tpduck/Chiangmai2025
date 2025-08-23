@@ -111,7 +111,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">每人金額計算</label>
-                            <input type="text" id="fundCalc" placeholder="例: 100*5+50" class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500" oninput="updateFundCalc()">
+                            <input type="text" id="fundCalc" placeholder="例: 100*5+50" class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-green-500">
                             <div class="text-xs text-gray-500 mt-1">每人: <span id="fundCalcResult">0</span></div>
                         </div>
                         <div>
@@ -173,7 +173,7 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">金額計算</label>
-                            <input type="text" id="expenseCalc" placeholder="例: 200*3+150" class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" oninput="updateExpenseCalc()">
+                            <input type="text" id="expenseCalc" placeholder="例: 200*3+150" class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <div class="text-xs text-gray-500 mt-1">計算結果: <span id="expenseCalcResult">0</span></div>
                         </div>
                         <div>
@@ -269,7 +269,32 @@
             renderFriends();
             updateExpenseDate();
             updateDisplay();
+            setupEventListeners();
         });
+
+        // 設定事件監聽器
+        function setupEventListeners() {
+            // 公費計算輸入框
+            const fundCalc = document.getElementById('fundCalc');
+            const fundAmount = document.getElementById('fundAmount');
+            const fundCurrency = document.getElementById('fundCurrency');
+            
+            if (fundCalc) {
+                fundCalc.addEventListener('input', updateFundCalc);
+            }
+            if (fundAmount) {
+                fundAmount.addEventListener('input', updateFundPreview);
+            }
+            if (fundCurrency) {
+                fundCurrency.addEventListener('change', updateFundPreview);
+            }
+            
+            // 支出計算輸入框
+            const expenseCalc = document.getElementById('expenseCalc');
+            if (expenseCalc) {
+                expenseCalc.addEventListener('input', updateExpenseCalc);
+            }
+        }
 
         // 計算函數
         function calculateAmount(input) {
@@ -293,12 +318,25 @@
             friends.forEach((friend, index) => {
                 const div = document.createElement('div');
                 div.className = 'flex items-center gap-2';
-                div.innerHTML = `
-                    <span class="text-sm text-gray-600 w-8">#${index + 1}</span>
-                    <input type="text" value="${friend}" onchange="updateFriend(${index}, this.value)" 
-                           placeholder="團員 ${index + 1} 姓名" 
-                           class="flex-1 p-3 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500">
-                `;
+                
+                const span = document.createElement('span');
+                span.className = 'text-sm text-gray-600 w-8';
+                span.textContent = `#${index + 1}`;
+                
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.value = friend;
+                input.placeholder = `團員 ${index + 1} 姓名`;
+                input.className = 'flex-1 p-3 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500';
+                input.addEventListener('input', function() {
+                    updateFriend(index, this.value);
+                });
+                input.addEventListener('blur', function() {
+                    updateFriend(index, this.value);
+                });
+                
+                div.appendChild(span);
+                div.appendChild(input);
                 grid.appendChild(div);
             });
             
@@ -408,6 +446,8 @@
             if (isHidden) {
                 form.classList.remove('hidden');
                 updateFundPreview();
+                // 重新綁定事件監聽器
+                setTimeout(setupEventListeners, 100);
             } else {
                 form.classList.add('hidden');
                 // 清空表單
@@ -447,6 +487,8 @@
                 usedBySelection = [...getValidFriends()];
                 updateExpenseOptions();
                 updateExpenseDate();
+                // 重新綁定事件監聽器
+                setTimeout(setupEventListeners, 100);
             } else {
                 form.classList.add('hidden');
                 cancelExpenseEdit();
@@ -553,6 +595,8 @@
             
             document.getElementById('addExpenseForm').classList.remove('hidden');
             updateExpenseOptions();
+            // 重新綁定事件監聽器
+            setTimeout(setupEventListeners, 100);
         }
 
         // 刪除支出
@@ -578,8 +622,142 @@
                 div.innerHTML = `
                     <div class="flex items-center justify-between">
                         <div class="flex-1">
-                            <div class="flex items-center gap-4 mb-2">
-                                <span class="font-semibold text-lg">${expense.description}</span>
-                                <span class="text-blue-600 font-bold">${expense.currency} ${expense.amount.toFixed(2)}</span>
-                                <span class="text-sm text-gray-500">${expense.date}</span>
+                            <div class="text-sm text-gray-600">
+                                付款: ${expense.paidBy === 'public' ? '公費' : expense.paidBy} | 
+                                使用人: ${expense.usedBy.join(', ')} | 
+                                人均: ${expense.currency} ${(expense.amount / expense.usedBy.length).toFixed(2)}
                             </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="editExpense(${expense.id})" class="text-orange-500 hover:text-orange-700 p-2" title="編輯支出">
+                                <svg class="icon" viewBox="0 0 24 24">
+                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                    <path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                </svg>
+                            </button>
+                            <button onclick="removeExpense(${expense.id})" class="text-red-500 hover:text-red-700 p-2" title="刪除支出">
+                                <svg class="icon" viewBox="0 0 24 24">
+                                    <path d="m3 6 3 12c0 .6.4 1 1 1h8c.6 0 1-.4 1-1l3-12"></path>
+                                    <path d="M8 6V4c0-.6.4-1 1-1h4c.6 0 1 .4 1 1v2"></path>
+                                    <path d="M19 6H5"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // 切換結算
+        function toggleSettlement() {
+            const content = document.getElementById('settlementContent');
+            const btn = document.getElementById('settlementBtn');
+            const isHidden = content.classList.contains('hidden');
+            
+            if (isHidden) {
+                content.classList.remove('hidden');
+                btn.textContent = '隱藏 結算';
+                renderSettlement();
+            } else {
+                content.classList.add('hidden');
+                btn.textContent = '顯示 結算';
+            }
+        }
+
+        // 計算結算
+        function calculateSettlement() {
+            const validFriends = getValidFriends();
+            const balances = {};
+            
+            validFriends.forEach(friend => {
+                balances[friend] = { TWD: 0, THB: 0 };
+            });
+
+            // 計算支出分攤
+            expenses.forEach(expense => {
+                const perPersonCost = expense.amount / expense.usedBy.length;
+                
+                expense.usedBy.forEach(user => {
+                    if (validFriends.includes(user)) {
+                        balances[user][expense.currency] -= perPersonCost;
+                    }
+                });
+
+                if (expense.paidBy !== 'public' && validFriends.includes(expense.paidBy)) {
+                    balances[expense.paidBy][expense.currency] += expense.amount;
+                }
+            });
+
+            // 加入已繳公費
+            validFriends.forEach(friend => {
+                balances[friend].TWD += publicContributions.TWD;
+                balances[friend].THB += publicContributions.THB;
+            });
+
+            return balances;
+        }
+
+        // 渲染結算
+        function renderSettlement() {
+            const grid = document.getElementById('settlementGrid');
+            const balances = calculateSettlement();
+            const validFriends = getValidFriends();
+            
+            grid.innerHTML = '';
+            
+            validFriends.forEach(friend => {
+                const balance = balances[friend];
+                const totalTWD = balance.TWD + (balance.THB / exchangeRate);
+                
+                const div = document.createElement('div');
+                div.className = 'bg-gray-50 p-4 rounded-lg';
+                div.innerHTML = `
+                    <div class="font-semibold text-lg mb-2">${friend}</div>
+                    <div class="space-y-1 text-sm">
+                        <div>台幣: <span class="font-medium ${balance.TWD >= 0 ? 'text-green-600' : 'text-red-600'}">
+                            TWD ${balance.TWD.toFixed(2)}
+                        </span></div>
+                        <div>泰銖: <span class="font-medium ${balance.THB >= 0 ? 'text-green-600' : 'text-red-600'}">
+                            THB ${balance.THB.toFixed(2)}
+                        </span></div>
+                        <div class="border-t pt-1">
+                            總計(台幣): <span class="font-bold ${totalTWD >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                TWD ${totalTWD.toFixed(2)}
+                            </span>
+                        </div>
+                        <div class="text-xs font-medium">
+                            ${totalTWD >= 0 ? 
+                                `<span class="text-green-600">💰 應收回 TWD ${Math.abs(totalTWD).toFixed(2)}</span>` : 
+                                `<span class="text-red-600">💸 需補繳 TWD ${Math.abs(totalTWD).toFixed(2)}</span>`
+                            }
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(div);
+            });
+        }
+
+        // 更新所有顯示
+        function updateDisplay() {
+            // 更新公費餘額
+            document.getElementById('twdBalance').textContent = `TWD ${publicFunds.TWD.toFixed(2)}`;
+            document.getElementById('thbBalance').textContent = `THB ${publicFunds.THB.toFixed(2)}`;
+            
+            // 更新已繳公費
+            const validFriends = getValidFriends();
+            document.getElementById('twdContribution').textContent = `TWD ${publicContributions.TWD.toFixed(2)}`;
+            document.getElementById('thbContribution').textContent = `THB ${publicContributions.THB.toFixed(2)}`;
+            document.getElementById('twdTotal').textContent = `總計: TWD ${(publicContributions.TWD * validFriends.length).toFixed(2)}`;
+            document.getElementById('thbTotal').textContent = `總計: THB ${(publicContributions.THB * validFriends.length).toFixed(2)}`;
+        }
+
+        // 監聽輸入變化 - 移除這個部分，改用動態綁定
+        // document.addEventListener('input', function(e) {
+        //     if (e.target.id === 'fundAmount' || e.target.id === 'fundCurrency') {
+        //         updateFundPreview();
+        //     }
+        // });
+    </script>
+</body>
+</html>
