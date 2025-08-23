@@ -35,6 +35,19 @@
             <div class="text-center mb-8">
                 <h1 class="text-4xl font-bold text-orange-600 mb-2">🏛️ 清邁放空團 🛺</h1>
                 <p class="text-gray-600">記帳管理系統</p>
+                
+                <!-- 資料管理按鈕 -->
+                <div class="mt-4 flex flex-wrap justify-center gap-2">
+                    <button onclick="exportData()" class="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 btn">
+                        📤 匯出資料
+                    </button>
+                    <button onclick="clearAllData()" class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 btn">
+                        🗑️ 清除資料
+                    </button>
+                    <div class="text-xs text-gray-500 w-full mt-2">
+                        💾 資料會自動儲存在瀏覽器中
+                    </div>
+                </div>
             </div>
 
             <!-- 團員管理 -->
@@ -264,12 +277,124 @@
         let usedBySelection = [];
         const exchangeRate = 1.1;
 
+        // 儲存資料到本地存儲
+        function saveData() {
+            const data = {
+                friends,
+                publicFunds,
+                publicContributions,
+                expenses,
+                lastUpdated: new Date().toISOString()
+            };
+            localStorage.setItem('chiangMaiExpenseTracker', JSON.stringify(data));
+            
+            // 顯示儲存提示
+            showSaveNotification();
+        }
+
+        // 載入資料從本地存儲
+        function loadData() {
+            const savedData = localStorage.getItem('chiangMaiExpenseTracker');
+            if (savedData) {
+                try {
+                    const data = JSON.parse(savedData);
+                    friends = data.friends || ['', '', '', '', '', ''];
+                    publicFunds = data.publicFunds || { TWD: 0, THB: 0 };
+                    publicContributions = data.publicContributions || { TWD: 0, THB: 0 };
+                    expenses = data.expenses || [];
+                    
+                    console.log('已載入儲存的資料，最後更新時間:', data.lastUpdated);
+                    return true;
+                } catch (e) {
+                    console.error('載入資料失敗:', e);
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        // 清除所有資料
+        function clearAllData() {
+            if (confirm('確定要清除所有資料嗎？此操作無法復原！')) {
+                localStorage.removeItem('chiangMaiExpenseTracker');
+                // 重置所有變數
+                friends = ['', '', '', '', '', ''];
+                publicFunds = { TWD: 0, THB: 0 };
+                publicContributions = { TWD: 0, THB: 0 };
+                expenses = [];
+                editingExpenseId = null;
+                usedBySelection = [];
+                
+                // 重新渲染頁面
+                renderFriends();
+                updateDisplay();
+                renderExpenses();
+                
+                alert('所有資料已清除！');
+            }
+        }
+
+        // 匯出資料
+        function exportData() {
+            const data = {
+                friends,
+                publicFunds,
+                publicContributions,
+                expenses,
+                exportDate: new Date().toISOString()
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `清邁放空團記帳_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // 顯示儲存通知
+        function showSaveNotification() {
+            // 移除現有的通知
+            const existingNotification = document.getElementById('saveNotification');
+            if (existingNotification) {
+                existingNotification.remove();
+            }
+            
+            // 創建新通知
+            const notification = document.createElement('div');
+            notification.id = 'saveNotification';
+            notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-all duration-300';
+            notification.innerHTML = '💾 資料已自動儲存';
+            document.body.appendChild(notification);
+            
+            // 3秒後移除通知
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.remove();
+                    }
+                }, 300);
+            }, 2000);
+        }
+
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
+            // 先載入儲存的資料
+            const hasData = loadData();
+            
             renderFriends();
             updateExpenseDate();
             updateDisplay();
+            renderExpenses();
             setupEventListeners();
+            
+            if (hasData) {
+                console.log('已載入先前的資料');
+            }
         });
 
         // 設定事件監聽器
@@ -349,6 +474,7 @@
             friends[index] = value;
             updateFriendsStatus();
             updateExpenseOptions();
+            saveData(); // 自動儲存
         }
 
         // 更新朋友狀態
@@ -465,299 +591,3 @@
             
             const perPersonAmount = calcInput ? calculateAmount(calcInput) : (parseFloat(directAmount) || 0);
             const validFriends = getValidFriends();
-            const totalAmount = perPersonAmount * validFriends.length;
-            
-            if (perPersonAmount > 0 && validFriends.length > 0) {
-                publicFunds[currency] += totalAmount;
-                publicContributions[currency] += perPersonAmount;
-                
-                updateDisplay();
-                toggleAddFunds();
-            }
-        }
-
-        // 切換支出表單
-        function toggleAddExpense() {
-            const form = document.getElementById('addExpenseForm');
-            const isHidden = form.classList.contains('hidden');
-            
-            if (isHidden) {
-                form.classList.remove('hidden');
-                // 預設全選所有人
-                usedBySelection = [...getValidFriends()];
-                updateExpenseOptions();
-                updateExpenseDate();
-                // 重新綁定事件監聽器
-                setTimeout(setupEventListeners, 100);
-            } else {
-                form.classList.add('hidden');
-                cancelExpenseEdit();
-            }
-        }
-
-        // 取消支出編輯
-        function cancelExpenseEdit() {
-            if (editingExpenseId !== null) {
-                const originalExpense = expenses.find(e => e.id === editingExpenseId);
-                if (originalExpense && originalExpense.paidBy === 'public') {
-                    publicFunds[originalExpense.currency] -= originalExpense.amount;
-                }
-            }
-            
-            editingExpenseId = null;
-            usedBySelection = [];
-            
-            // 清空表單
-            document.getElementById('expenseDesc').value = '';
-            document.getElementById('expenseCalc').value = '';
-            document.getElementById('expenseAmount').value = '';
-            document.getElementById('expenseCurrency').value = 'THB';
-            document.getElementById('expensePaidBy').value = 'public';
-            document.getElementById('expenseFormTitle').textContent = '新增支出';
-            document.getElementById('expenseSubmitBtn').textContent = '新增支出';
-            document.getElementById('expenseSubmitBtn').className = 'px-4 py-2 bg-blue-500 text-white rounded btn';
-            
-            updateExpenseOptions();
-        }
-
-        // 新增支出
-        function addExpense() {
-            const description = document.getElementById('expenseDesc').value;
-            const calcInput = document.getElementById('expenseCalc').value;
-            const directAmount = document.getElementById('expenseAmount').value;
-            const currency = document.getElementById('expenseCurrency').value;
-            const paidBy = document.getElementById('expensePaidBy').value;
-            const date = document.getElementById('expenseDate').value;
-            
-            const amount = calcInput ? calculateAmount(calcInput) : (parseFloat(directAmount) || 0);
-            const validUsedBy = usedBySelection.filter(f => getValidFriends().includes(f));
-            
-            if (description && amount > 0 && validUsedBy.length > 0) {
-                if (editingExpenseId !== null) {
-                    // 更新支出
-                    const expenseIndex = expenses.findIndex(e => e.id === editingExpenseId);
-                    expenses[expenseIndex] = {
-                        id: editingExpenseId,
-                        description,
-                        amount,
-                        currency,
-                        paidBy,
-                        usedBy: validUsedBy,
-                        date
-                    };
-                } else {
-                    // 新增支出
-                    expenses.push({
-                        id: Date.now(),
-                        description,
-                        amount,
-                        currency,
-                        paidBy,
-                        usedBy: validUsedBy,
-                        date
-                    });
-                }
-                
-                // 如果是公費支付，扣除公費
-                if (paidBy === 'public') {
-                    publicFunds[currency] -= amount;
-                }
-                
-                updateDisplay();
-                renderExpenses();
-                toggleAddExpense();
-            }
-        }
-
-        // 編輯支出
-        function editExpense(expenseId) {
-            const expense = expenses.find(e => e.id === expenseId);
-            if (!expense) return;
-            
-            // 如果原本是公費支付，先退回公費
-            if (expense.paidBy === 'public') {
-                publicFunds[expense.currency] += expense.amount;
-            }
-            
-            editingExpenseId = expenseId;
-            usedBySelection = [...expense.usedBy];
-            
-            // 填入表單
-            document.getElementById('expenseDesc').value = expense.description;
-            document.getElementById('expenseAmount').value = expense.amount;
-            document.getElementById('expenseCurrency').value = expense.currency;
-            document.getElementById('expensePaidBy').value = expense.paidBy;
-            document.getElementById('expenseDate').value = expense.date;
-            
-            document.getElementById('expenseFormTitle').textContent = '編輯支出';
-            document.getElementById('expenseSubmitBtn').textContent = '更新支出';
-            document.getElementById('expenseSubmitBtn').className = 'px-4 py-2 bg-orange-500 text-white rounded btn';
-            
-            document.getElementById('addExpenseForm').classList.remove('hidden');
-            updateExpenseOptions();
-            // 重新綁定事件監聽器
-            setTimeout(setupEventListeners, 100);
-        }
-
-        // 刪除支出
-        function removeExpense(expenseId) {
-            const expense = expenses.find(e => e.id === expenseId);
-            if (expense && expense.paidBy === 'public') {
-                publicFunds[expense.currency] += expense.amount;
-            }
-            expenses = expenses.filter(e => e.id !== expenseId);
-            
-            updateDisplay();
-            renderExpenses();
-        }
-
-        // 渲染支出列表
-        function renderExpenses() {
-            const list = document.getElementById('expensesList');
-            list.innerHTML = '';
-            
-            expenses.forEach(expense => {
-                const div = document.createElement('div');
-                div.className = 'bg-white p-4 rounded-lg border border-blue-200';
-                div.innerHTML = `
-                    <div class="flex items-center justify-between">
-                        <div class="flex-1">
-                            <div class="text-sm text-gray-600">
-                                付款: ${expense.paidBy === 'public' ? '公費' : expense.paidBy} | 
-                                使用人: ${expense.usedBy.join(', ')} | 
-                                人均: ${expense.currency} ${(expense.amount / expense.usedBy.length).toFixed(2)}
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="editExpense(${expense.id})" class="text-orange-500 hover:text-orange-700 p-2" title="編輯支出">
-                                <svg class="icon" viewBox="0 0 24 24">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                    <path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                </svg>
-                            </button>
-                            <button onclick="removeExpense(${expense.id})" class="text-red-500 hover:text-red-700 p-2" title="刪除支出">
-                                <svg class="icon" viewBox="0 0 24 24">
-                                    <path d="m3 6 3 12c0 .6.4 1 1 1h8c.6 0 1-.4 1-1l3-12"></path>
-                                    <path d="M8 6V4c0-.6.4-1 1-1h4c.6 0 1 .4 1 1v2"></path>
-                                    <path d="M19 6H5"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-        }
-
-        // 切換結算
-        function toggleSettlement() {
-            const content = document.getElementById('settlementContent');
-            const btn = document.getElementById('settlementBtn');
-            const isHidden = content.classList.contains('hidden');
-            
-            if (isHidden) {
-                content.classList.remove('hidden');
-                btn.textContent = '隱藏 結算';
-                renderSettlement();
-            } else {
-                content.classList.add('hidden');
-                btn.textContent = '顯示 結算';
-            }
-        }
-
-        // 計算結算
-        function calculateSettlement() {
-            const validFriends = getValidFriends();
-            const balances = {};
-            
-            validFriends.forEach(friend => {
-                balances[friend] = { TWD: 0, THB: 0 };
-            });
-
-            // 計算支出分攤
-            expenses.forEach(expense => {
-                const perPersonCost = expense.amount / expense.usedBy.length;
-                
-                expense.usedBy.forEach(user => {
-                    if (validFriends.includes(user)) {
-                        balances[user][expense.currency] -= perPersonCost;
-                    }
-                });
-
-                if (expense.paidBy !== 'public' && validFriends.includes(expense.paidBy)) {
-                    balances[expense.paidBy][expense.currency] += expense.amount;
-                }
-            });
-
-            // 加入已繳公費
-            validFriends.forEach(friend => {
-                balances[friend].TWD += publicContributions.TWD;
-                balances[friend].THB += publicContributions.THB;
-            });
-
-            return balances;
-        }
-
-        // 渲染結算
-        function renderSettlement() {
-            const grid = document.getElementById('settlementGrid');
-            const balances = calculateSettlement();
-            const validFriends = getValidFriends();
-            
-            grid.innerHTML = '';
-            
-            validFriends.forEach(friend => {
-                const balance = balances[friend];
-                const totalTWD = balance.TWD + (balance.THB / exchangeRate);
-                
-                const div = document.createElement('div');
-                div.className = 'bg-gray-50 p-4 rounded-lg';
-                div.innerHTML = `
-                    <div class="font-semibold text-lg mb-2">${friend}</div>
-                    <div class="space-y-1 text-sm">
-                        <div>台幣: <span class="font-medium ${balance.TWD >= 0 ? 'text-green-600' : 'text-red-600'}">
-                            TWD ${balance.TWD.toFixed(2)}
-                        </span></div>
-                        <div>泰銖: <span class="font-medium ${balance.THB >= 0 ? 'text-green-600' : 'text-red-600'}">
-                            THB ${balance.THB.toFixed(2)}
-                        </span></div>
-                        <div class="border-t pt-1">
-                            總計(台幣): <span class="font-bold ${totalTWD >= 0 ? 'text-green-600' : 'text-red-600'}">
-                                TWD ${totalTWD.toFixed(2)}
-                            </span>
-                        </div>
-                        <div class="text-xs font-medium">
-                            ${totalTWD >= 0 ? 
-                                `<span class="text-green-600">💰 應收回 TWD ${Math.abs(totalTWD).toFixed(2)}</span>` : 
-                                `<span class="text-red-600">💸 需補繳 TWD ${Math.abs(totalTWD).toFixed(2)}</span>`
-                            }
-                        </div>
-                    </div>
-                `;
-                grid.appendChild(div);
-            });
-        }
-
-        // 更新所有顯示
-        function updateDisplay() {
-            // 更新公費餘額
-            document.getElementById('twdBalance').textContent = `TWD ${publicFunds.TWD.toFixed(2)}`;
-            document.getElementById('thbBalance').textContent = `THB ${publicFunds.THB.toFixed(2)}`;
-            
-            // 更新已繳公費
-            const validFriends = getValidFriends();
-            document.getElementById('twdContribution').textContent = `TWD ${publicContributions.TWD.toFixed(2)}`;
-            document.getElementById('thbContribution').textContent = `THB ${publicContributions.THB.toFixed(2)}`;
-            document.getElementById('twdTotal').textContent = `總計: TWD ${(publicContributions.TWD * validFriends.length).toFixed(2)}`;
-            document.getElementById('thbTotal').textContent = `總計: THB ${(publicContributions.THB * validFriends.length).toFixed(2)}`;
-        }
-
-        // 監聽輸入變化 - 移除這個部分，改用動態綁定
-        // document.addEventListener('input', function(e) {
-        //     if (e.target.id === 'fundAmount' || e.target.id === 'fundCurrency') {
-        //         updateFundPreview();
-        //     }
-        // });
-    </script>
-</body>
-</html>
