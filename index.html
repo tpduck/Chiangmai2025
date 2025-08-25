@@ -3,12 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>清邁放空團 - 記帳管理系統</title>
+    <title>清邁放空團 - 記帳管理系統 (同步版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
     <style>
         .btn:hover {
             transform: translateY(-1px);
             transition: all 0.2s;
+        }
+        .sync-indicator {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
     </style>
 </head>
@@ -18,18 +30,28 @@
             <!-- 標題 -->
             <div class="text-center mb-6">
                 <h1 class="text-3xl font-bold text-orange-600 mb-2">🏛️ 清邁放空團 🛺</h1>
-                <p class="text-gray-600">記帳管理系統</p>
+                <p class="text-gray-600">記帳管理系統 (即時同步版)</p>
+                
+                <!-- 同步狀態 -->
+                <div class="mt-2 flex justify-center items-center gap-2">
+                    <div id="syncStatus" class="text-xs px-2 py-1 rounded-full bg-gray-200 text-gray-600">
+                        🔄 連接中...
+                    </div>
+                    <div id="userCount" class="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-600">
+                        👥 線上: 1 人
+                    </div>
+                </div>
                 
                 <!-- 資料管理按鈕 -->
                 <div class="mt-4 flex flex-wrap justify-center gap-2">
                     <button onclick="exportData()" class="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600 btn">
-                        📤 匯出資料
+                        📤 匯出備份
                     </button>
-                    <button onclick="clearAllData()" class="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 btn">
-                        🗑️ 清除資料
+                    <button onclick="shareTrip()" class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600 btn">
+                        🔗 分享連結
                     </button>
                     <div class="text-xs text-gray-500 w-full mt-2">
-                        💾 資料會自動儲存在瀏覽器中
+                        ☁️ 資料即時同步到雲端，所有人都能看到更新
                     </div>
                 </div>
             </div>
@@ -218,6 +240,25 @@
     </div>
 
     <script>
+        // === Firebase 設定 ===
+        // 🚨 請替換為你的 Firebase 設定
+       const firebaseConfig = {
+  apiKey: "AIzaSyBCpSjxRDuxHqomvk8lwpUtpv0l7F4v7XA",
+  authDomain: "chiangmai2025-55a97.firebaseapp.com",
+  projectId: "chiangmai2025-55a97",
+  storageBucket: "chiangmai2025-55a97.firebasestorage.app",
+  messagingSenderId: "26771370031",
+  appId: "1:26771370031:web:32ba6c21f2badab5ce96da",
+  measurementId: "G-YK69FBF0ZK"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+        
+        // 獲取或生成旅行 ID
+        let tripId = new URLSearchParams(window.location.search).get('trip') || 'default-trip';
+        
         // 全域變數
         let data = {
             friends: ['', '', '', '', '', ''],
@@ -228,30 +269,74 @@
         let editingExpense = null;
         let usedBy = [];
 
-        // 儲存到 localStorage
-        function saveData() {
-            try {
-                localStorage.setItem('chiangMaiTracker', JSON.stringify(data));
-                showNotification('💾 資料已儲存');
-            } catch (e) {
-                console.error('儲存失敗:', e);
-            }
+        // === Firebase 同步函數 ===
+        
+        // 儲存到 Firebase
+        function saveToFirebase() {
+            const docRef = db.collection('expense-tracker').doc(tripId);
+            
+            docRef.set({
+                ...data,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedBy: getUserId()
+            }).then(() => {
+                updateSyncStatus('已同步', 'green');
+            }).catch((error) => {
+                console.error('同步失敗:', error);
+                updateSyncStatus('同步失敗', 'red');
+            });
         }
 
-        // 載入資料
-        function loadData() {
-            try {
-                const saved = localStorage.getItem('chiangMaiTracker');
-                if (saved) {
-                    data = { ...data, ...JSON.parse(saved) };
-                    return true;
+        // 從 Firebase 載入
+        function loadFromFirebase() {
+            const docRef = db.collection('expense-tracker').doc(tripId);
+            
+            // 即時監聽資料變更
+            docRef.onSnapshot((doc) => {
+                if (doc.exists) {
+                    const firebaseData = doc.data();
+                    
+                    // 更新本地資料
+                    data = {
+                        friends: firebaseData.friends || ['', '', '', '', '', ''],
+                        publicFunds: firebaseData.publicFunds || { TWD: 0, THB: 0 },
+                        publicContributions: firebaseData.publicContributions || { TWD: 0, THB: 0 },
+                        expenses: firebaseData.expenses || []
+                    };
+                    
+                    updateAll();
+                    updateSyncStatus('已連線', 'green');
+                } else {
+                    // 文件不存在，建立初始資料
+                    saveToFirebase();
                 }
-            } catch (e) {
-                console.error('載入失敗:', e);
-            }
-            return false;
+            }, (error) => {
+                console.error('載入失敗:', error);
+                updateSyncStatus('連線失敗', 'red');
+            });
         }
 
+        // 更新同步狀態
+        function updateSyncStatus(text, color) {
+            const statusEl = document.getElementById('syncStatus');
+            if (statusEl) {
+                statusEl.textContent = `🔄 ${text}`;
+                statusEl.className = `text-xs px-2 py-1 rounded-full ${color === 'green' ? 'bg-green-100 text-green-600' : color === 'red' ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600'}`;
+            }
+        }
+
+        // 獲取使用者 ID
+        function getUserId() {
+            let userId = localStorage.getItem('userId');
+            if (!userId) {
+                userId = 'user_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('userId', userId);
+            }
+            return userId;
+        }
+
+        // === 原有功能函數（修改為同步版本）===
+        
         // 顯示通知
         function showNotification(text) {
             const notification = document.createElement('div');
@@ -263,28 +348,38 @@
             }, 2000);
         }
 
-        // 清除所有資料
-        function clearAllData() {
-            if (confirm('確定要清除所有資料嗎？')) {
-                localStorage.removeItem('chiangMaiTracker');
-                data = {
-                    friends: ['', '', '', '', '', ''],
-                    publicFunds: { TWD: 0, THB: 0 },
-                    publicContributions: { TWD: 0, THB: 0 },
-                    expenses: []
-                };
-                updateAll();
-                alert('資料已清除！');
+        // 分享旅行連結
+        function shareTrip() {
+            const url = `${window.location.origin}${window.location.pathname}?trip=${tripId}`;
+            if (navigator.share) {
+                navigator.share({
+                    title: '清邁放空團記帳',
+                    text: '加入我們的記帳系統',
+                    url: url
+                });
+            } else {
+                // 複製到剪貼板
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('分享連結已複製到剪貼板！\n\n' + url);
+                }).catch(() => {
+                    prompt('請複製以下連結分享給團員：', url);
+                });
             }
         }
 
-        // 匯出資料
+        // 匯出資料（備份用）
         function exportData() {
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const exportData = {
+                ...data,
+                tripId: tripId,
+                exportDate: new Date().toISOString()
+            };
+            
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `清邁記帳_${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `清邁記帳備份_${new Date().toISOString().split('T')[0]}.json`;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -305,7 +400,6 @@
 
         // 更新顯示
         function updateDisplay() {
-            // 更新公費顯示
             const twdBalance = document.getElementById('twdBalance');
             const thbBalance = document.getElementById('thbBalance');
             const twdContrib = document.getElementById('twdContrib');
@@ -323,7 +417,6 @@
             const paidBySelect = document.getElementById('expensePaidBy');
             const buttonsDiv = document.getElementById('usedByButtons');
             
-            // 更新付款選項
             if (paidBySelect) {
                 paidBySelect.innerHTML = '<option value="public">公費支付</option>';
                 validFriends.forEach(friend => {
@@ -331,7 +424,6 @@
                 });
             }
             
-            // 更新使用人員按鈕
             if (buttonsDiv) {
                 buttonsDiv.innerHTML = '';
                 validFriends.forEach(friend => {
@@ -357,7 +449,6 @@
 
         // 更新所有內容
         function updateAll() {
-            // 載入朋友名字到輸入框
             for (let i = 0; i < 6; i++) {
                 const input = document.getElementById(`friend${i}`);
                 if (input) {
@@ -382,7 +473,6 @@
                 } else {
                     form.classList.add('hidden');
                     btn.textContent = '+ 收取公費';
-                    // 清空表單
                     document.getElementById('fundAmount').value = '';
                 }
             }
@@ -401,7 +491,8 @@
                 
                 updateDisplay();
                 toggleFunds();
-                saveData();
+                saveToFirebase(); // 同步到 Firebase
+                showNotification('☁️ 公費已記錄並同步');
             }
         }
 
@@ -413,7 +504,6 @@
                 if (form.classList.contains('hidden')) {
                     form.classList.remove('hidden');
                     btn.textContent = '- 取消';
-                    // 預設全選
                     usedBy = [...getValidFriends()];
                     updateExpenseOptions();
                 } else {
@@ -454,19 +544,17 @@
                 currency: currency,
                 paidBy: paidBy,
                 usedBy: [...usedBy],
-                date: new Date().toISOString().split('T')[0]
+                date: new Date().toISOString().split('T')[0],
+                createdBy: getUserId()
             };
             
             if (editingExpense) {
-                // 更新
                 const index = data.expenses.findIndex(e => e.id === editingExpense);
                 data.expenses[index] = expense;
             } else {
-                // 新增
                 data.expenses.push(expense);
             }
             
-            // 扣除公費
             if (paidBy === 'public') {
                 data.publicFunds[currency] -= amount;
             }
@@ -474,7 +562,8 @@
             updateDisplay();
             renderExpenses();
             toggleExpense();
-            saveData();
+            saveToFirebase(); // 同步到 Firebase
+            showNotification('☁️ 支出已記錄並同步');
         }
 
         // 編輯支出
@@ -482,7 +571,6 @@
             const expense = data.expenses.find(e => e.id === id);
             if (!expense) return;
             
-            // 如果是公費，先退回
             if (expense.paidBy === 'public') {
                 data.publicFunds[expense.currency] += expense.amount;
             }
@@ -515,7 +603,8 @@
             data.expenses = data.expenses.filter(e => e.id !== id);
             updateDisplay();
             renderExpenses();
-            saveData();
+            saveToFirebase(); // 同步到 Firebase
+            showNotification('☁️ 支出已刪除並同步');
         }
 
         // 渲染支出列表
@@ -578,13 +667,11 @@
             const grid = document.getElementById('settlementGrid');
             if (!grid || validFriends.length === 0) return;
             
-            // 計算每個人的收支
             const balances = {};
             validFriends.forEach(friend => {
                 balances[friend] = { TWD: 0, THB: 0 };
             });
             
-            // 計算支出分攤
             data.expenses.forEach(expense => {
                 const perPerson = expense.amount / expense.usedBy.length;
                 expense.usedBy.forEach(user => {
@@ -597,13 +684,11 @@
                 }
             });
             
-            // 加入已繳公費
             validFriends.forEach(friend => {
                 balances[friend].TWD += data.publicContributions.TWD;
                 balances[friend].THB += data.publicContributions.THB;
             });
             
-            // 渲染結果
             grid.innerHTML = validFriends.map(friend => {
                 const balance = balances[friend];
                 const totalTWD = balance.TWD + (balance.THB / 1.1);
@@ -635,8 +720,8 @@
 
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            // 載入儲存的資料
-            loadData();
+            // 先連接 Firebase
+            loadFromFirebase();
             
             // 綁定朋友輸入框事件
             for (let i = 0; i < 6; i++) {
@@ -646,13 +731,15 @@
                         data.friends[i] = this.value;
                         updateFriendsStatus();
                         updateExpenseOptions();
-                        saveData();
+                        saveToFirebase(); // 即時同步
                     });
                 }
             }
             
-            // 初始更新所有內容
-            updateAll();
+            // 顯示旅行 ID
+            if (tripId !== 'default-trip') {
+                document.title += ` - ${tripId}`;
+            }
         });
     </script>
 </body>
